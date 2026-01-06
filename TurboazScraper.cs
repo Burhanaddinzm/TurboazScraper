@@ -8,18 +8,17 @@ public class TurboazScraper : Scraper
 {
     public TurboazScraper(string url, bool isHeadless) : base(url, isHeadless) { }
 
-    public List<IWebElement> GetListings()
+    public List<CarModel> GetCars()
     {
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(30));
-        var results = new List<IWebElement>();
 
+        List<CarModel> cars = new List<CarModel>();
         int page = 1;
 
         while (true)
         {
             Console.WriteLine($"[PAGE] Processing page {page}");
 
-            // Wait for NORMAL listings container (important)
             wait.Until(d =>
                 d.FindElements(By.CssSelector(".products .products-i")).Count > 0
             );
@@ -31,7 +30,6 @@ public class TurboazScraper : Scraper
             {
                 var classes = item.GetAttribute("class") ?? "";
 
-                // Skip VIP / featured / salon completely
                 if (classes.Contains("vipped") ||
                     classes.Contains("featured") ||
                     classes.Contains("salon"))
@@ -48,17 +46,16 @@ public class TurboazScraper : Scraper
 
                 var dateText = dateEl.Text;
 
-                // STOP only on NORMAL listings
                 if (!dateText.Contains("bugün") && !dateText.Contains("dünən"))
                 {
-                    Console.WriteLine($"[STOP] Normal listing out of range: {dateText}");
-                    return results;
+                    Console.WriteLine($"[STOP] Listing out of range: {dateText}");
+                    Console.WriteLine($"[DONE] Collected {cars.Count} cars");
+                    return cars;
                 }
 
-                results.Add(item);
+                cars.Add(item.GetCarObj());
             }
 
-            // next page (NORMAL listings pagination)
             var nextBtn = _driver
                 .FindElements(By.CssSelector(".pagination .next a"))
                 .FirstOrDefault();
@@ -69,17 +66,18 @@ public class TurboazScraper : Scraper
                 break;
             }
 
-            var currentUrl = _driver.Url;
-            nextBtn.Click();
+            var nextPageUrl = $"{_driver.Url}&page={page + 1}";
+            _driver.Navigate().GoToUrl(nextPageUrl);
 
-            wait.Until(d => d.Url != currentUrl);
+            wait.Until(d => d.Url.Contains($"page={page + 1}"));
             page++;
         }
 
-        Console.WriteLine($"[DONE] Collected {results.Count} listings");
-        return results;
+        Console.WriteLine($"[DONE] Collected {cars.Count} cars");
+        return cars;
     }
 
+    // Unused
     private void AddFilters()
     {
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));

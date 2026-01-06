@@ -43,7 +43,7 @@ public class Scraper : IDisposable
             }
             catch
             {
-                System.Console.WriteLine("Failed to dispose ChromeDriver of Selenium");
+                Console.WriteLine("Failed to dispose ChromeDriver of Selenium");
             }
         }
         _disposed = true;
