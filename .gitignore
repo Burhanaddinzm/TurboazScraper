@@ -1,0 +1,30 @@
+# Build Folders
+bin/
+obj/
+
+# User-specific files
+*.suo
+*.user
+*.userprefs
+
+# Visual Studio temporary files
+*.vs/
+*.vscode/
+
+# NuGet Packages
+*.nupkg
+**/packages/*
+
+# Other files
+*.log
+*.zip
+*.mdb
+*.pdb
+*.dbmdl
+*.dbproj.schemaview
+
+# Visual Studio Code files
+.vscode/
+
+# Rider files
+.idea/
