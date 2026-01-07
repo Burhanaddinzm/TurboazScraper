@@ -20,9 +20,10 @@ public class Program
         try
         {
             using var scraper = new TurboazScraper(url: FILTERED_URL, isHeadless: true);
-            var listings = scraper.GetCars();
+            List<CarModel> listings = scraper.GetCars();
 
-            foreach (var item in listings) Console.WriteLine(item + "\n");
+            Console.WriteLine("Cars\n=======");
+            foreach (CarModel car in listings) Console.WriteLine(car + "\n");
         }
         catch (Exception ex)
         {

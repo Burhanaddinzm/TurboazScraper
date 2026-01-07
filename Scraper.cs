@@ -1,5 +1,7 @@
 namespace TurboScraper;
 
+using System.Runtime.InteropServices;
+using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 
 public class Scraper : IDisposable
@@ -10,18 +12,26 @@ public class Scraper : IDisposable
     public Scraper(string url, bool isHeadless)
     {
         var options = new ChromeOptions();
-        if (isHeadless)
+
+        options.PageLoadStrategy = PageLoadStrategy.Eager;
+        options.AddArgument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                            + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            options.AddArgument("--headless");
             options.AddArgument("--disable-gpu");
             options.AddArgument("--no-sandbox");
             options.AddArgument("--disable-dev-shm-usage");
             options.AddArgument("--window-size=1920,1080");
-            options.AddArgument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                                + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         }
 
-        _driver = new ChromeDriver(options);
+        if (isHeadless)
+        {
+            options.AddArgument("--headless");
+        }
+
+        var service = ChromeDriverService.CreateDefaultService();
+        _driver = new ChromeDriver(service, options, TimeSpan.FromMinutes(3));
         _driver.Navigate().GoToUrl(url);
     }
 
@@ -41,7 +51,7 @@ public class Scraper : IDisposable
                 _driver.Quit();
                 _driver.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
                 Console.WriteLine("Failed to dispose ChromeDriver of Selenium");
             }
