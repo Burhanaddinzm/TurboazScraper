@@ -16,10 +16,15 @@ public class Scraper : IDisposable
         options.PageLoadStrategy = PageLoadStrategy.Eager;
         options.AddArgument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                             + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        options.AddArgument("--disable-gpu");
+        options.AddArgument("--disable-extensions");
+        options.AddArgument("--disable-images");
+        options.AddArgument("--blink-settings=imagesEnabled=false");
+        options.AddUserProfilePreference("profile.managed_default_content_settings.images", 2);
+        options.AddUserProfilePreference("profile.default_content_setting_values.fonts", 2);
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            options.AddArgument("--disable-gpu");
             options.AddArgument("--no-sandbox");
             options.AddArgument("--disable-dev-shm-usage");
             options.AddArgument("--window-size=1920,1080");

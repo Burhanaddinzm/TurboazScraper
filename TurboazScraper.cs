@@ -6,10 +6,16 @@ namespace TurboScraper;
 
 public class TurboazScraper : Scraper
 {
-    public TurboazScraper(string url, bool isHeadless) : base(url, isHeadless) { }
+    private readonly TurboazScraperConfig _config;
+
+    public TurboazScraper(string url, bool isHeadless) : base(url, isHeadless)
+    {
+        _config = TurboazScraperConfig.FromEnvironment();
+    }
 
     public List<CarModel> GetCars()
     {
+        AddFilters();
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(30));
 
         List<CarModel> cars = new List<CarModel>();
@@ -40,11 +46,16 @@ public class TurboazScraper : Scraper
                 var dateEl = item
                     .FindElements(By.CssSelector(".products-i__datetime"))
                     .FirstOrDefault();
-
-                if (dateEl == null)
-                    continue;
+                if (dateEl == null) continue;
 
                 var dateText = dateEl.Text;
+
+                var link = item.FindElement(By.CssSelector("a.products-i__link"))
+                  .GetAttribute("href");
+                if (link == null) continue;
+
+                var (views, transmission) = GetViewCountAndTransmission(link);
+                if (views >= _config.MaxViews) continue;
 
                 if (!dateText.Contains("bugün") && !dateText.Contains("dünən"))
                 {
@@ -53,7 +64,7 @@ public class TurboazScraper : Scraper
                     return cars;
                 }
 
-                cars.Add(item.GetCarObj());
+                cars.Add(item.GetCarObj(link, views, transmission));
             }
 
             var nextBtn = _driver
@@ -77,92 +88,123 @@ public class TurboazScraper : Scraper
         return cars;
     }
 
-    // Unused
+    private (int Views, string Transmission) GetViewCountAndTransmission(string listingUrl)
+    {
+        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(15));
+        var originalWindow = _driver.CurrentWindowHandle;
+
+        ((IJavaScriptExecutor)_driver)
+            .ExecuteScript("window.open(arguments[0], '_blank');", listingUrl);
+
+        _driver.SwitchTo().Window(_driver.WindowHandles.Last());
+
+        try
+        {
+            var viewsEl = wait.Until(d =>
+                d.FindElements(By.CssSelector("span.product-statistics__i-text"))
+                 .FirstOrDefault(e => e.Text.Contains("Baxışların sayı"))
+            );
+
+            int views = int.MaxValue;
+            if (viewsEl != null)
+            {
+                var digits = new string(viewsEl.Text.Where(char.IsDigit).ToArray());
+                int.TryParse(digits, out views);
+            }
+
+            var transmission = wait.Until(d =>
+                d.FindElements(By.CssSelector(".product-properties__i"))
+                 .FirstOrDefault(el =>
+                     el.FindElement(By.CssSelector(".product-properties__i-name"))
+                       .Text.Trim() == "Sürətlər qutusu")
+            )
+            ?.FindElement(By.CssSelector(".product-properties__i-value"))
+            ?.Text
+            ?.Trim();
+
+            return (views, transmission ?? "Unknown");
+        }
+        finally
+        {
+            _driver.Close();
+            _driver.SwitchTo().Window(originalWindow);
+        }
+    }
+
     private void AddFilters()
     {
         var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
 
         try
         {
-            Console.WriteLine("[00] Starting AddFilters");
-            Console.WriteLine("[01] Waiting for More Filters button");
+            Console.WriteLine("[01] Starting AddFilters");
+
+            Console.WriteLine("[02] Waiting for 'More Filters' button");
             var moreFiltersBtn = wait.Until(ExpectedConditions.ElementToBeClickable(
                 By.CssSelector(".main-search__btn.tz-btn.tz-btn-link.tz-btn-link--primary.tz-btn-link--arrow.js-main-search-slide-down")));
 
-            Console.WriteLine("[02] Clicking More Filters");
+            Console.WriteLine("[03] Clicking 'More Filters'");
             moreFiltersBtn.Click();
 
-            Console.WriteLine("[03] Waiting for Max Price input");
+            Console.WriteLine("[04] Waiting for Max Price input");
             var maxPriceInput = wait.Until(ExpectedConditions.ElementIsVisible(By.Id("q_price_to")));
-            wait.Until(driver => maxPriceInput.Enabled);
+            wait.Until(_ => maxPriceInput.Enabled);
 
-            Console.WriteLine("[04] Setting Max Price -> 12000");
+            Console.WriteLine($"[05] Setting Max Price -> {_config.MaxPrice}");
             maxPriceInput.Clear();
-            maxPriceInput.SendKeys("12000");
+            maxPriceInput.SendKeys(_config.MaxPrice.ToString());
 
-            Console.WriteLine("[05] Locating market dropdown");
-            var dropdown = wait.Until(d => d.FindElement(By.CssSelector("div.tz-dropdown[data-id='q_market']")));
+            Console.WriteLine("[06] Locating Market dropdown");
+            var dropdown = wait.Until(d =>
+                d.FindElement(By.CssSelector("div.tz-dropdown[data-id='q_market']")));
+
             if (!dropdown.GetAttribute("class").Contains("is-open"))
             {
-                Console.WriteLine("[06] Opening dropdown");
-                var toggle = dropdown.FindElement(By.CssSelector(".tz-dropdown__selected"));
-                toggle.Click();
+                Console.WriteLine("[07] Opening Market dropdown");
+                dropdown.FindElement(By.CssSelector(".tz-dropdown__selected")).Click();
                 wait.Until(d => dropdown.GetAttribute("class").Contains("is-open"));
             }
 
-            Console.WriteLine("[07] Searching for option 'Rəsmi diler'");
+            Console.WriteLine($"[08] Selecting Market -> {_config.Market}");
             var option = wait.Until(d =>
                 d.FindElements(By.CssSelector("div.tz-dropdown__option"))
-                 .FirstOrDefault(el => el.Text.Trim().Contains("Rəsmi diler")));
-            if (option == null) throw new NoSuchElementException("Option 'Rəsmi diler' not found");
+                 .FirstOrDefault(el => el.Text.Trim().Contains(_config.Market)));
 
-            Console.WriteLine("[08] Clicking option");
-            var label = option.FindElements(By.CssSelector("label.tz-dropdown__option-label")).FirstOrDefault();
-            if (label != null) label.Click();
-            else
-            {
-                var checkbox = option.FindElements(By.CssSelector("input[type='checkbox']")).FirstOrDefault();
-                if (checkbox == null) throw new NoSuchElementException("No clickable element in option");
-                checkbox.Click();
-            }
+            if (option == null)
+                throw new NoSuchElementException($"Option '{_config.Market}' not found");
 
-            Console.WriteLine("[09] Waiting for selection to apply");
-            wait.Until(d => option.GetAttribute("class")?.Contains("is-selected") == true
-                             && dropdown.GetAttribute("class")?.Contains("is-selected") == true
-                             && dropdown.FindElement(By.CssSelector(".tz-dropdown__values")).Text.Trim() == "Rəsmi diler");
+            option.FindElements(By.CssSelector("label.tz-dropdown__option-label"))
+                  .FirstOrDefault()?.Click();
 
-            Console.WriteLine("[10] Closing dropdown if open");
+            Console.WriteLine("[09] Waiting for Market selection to apply");
+            wait.Until(d =>
+                dropdown.FindElement(By.CssSelector(".tz-dropdown__values"))
+                        .Text.Trim() == _config.Market);
+
             if (dropdown.GetAttribute("class").Contains("is-open"))
             {
+                Console.WriteLine("[10] Closing Market dropdown");
                 dropdown.FindElement(By.CssSelector(".tz-dropdown__selected")).Click();
                 wait.Until(d => !dropdown.GetAttribute("class").Contains("is-open"));
             }
 
             Console.WriteLine("[11] Waiting for Mileage input");
-            var mileage = wait.Until(driver => driver.FindElement(By.Id("q_mileage_to")));
+            var mileage = wait.Until(d => d.FindElement(By.Id("q_mileage_to")));
 
-            Console.WriteLine("[12] Setting Mileage -> 250000");
+            Console.WriteLine($"[12] Setting Mileage -> {_config.MaxMileage}");
             mileage.Clear();
-            mileage.SendKeys("250000");
+            mileage.SendKeys(_config.MaxMileage.ToString());
 
+            Console.WriteLine("[13] Clicking 'Elanları göstər'");
             var showResultsBtn = wait.Until(ExpectedConditions.ElementToBeClickable(
                 By.CssSelector("button.main-search__btn.tz-btn.tz-btn--primary[name='commit']")));
-            Console.WriteLine("[13] Clicking 'Elanları göstər' button");
             showResultsBtn.Click();
 
-            Console.WriteLine("[14] Done AddFilters");
-        }
-        catch (WebDriverTimeoutException)
-        {
-            Console.WriteLine("[ERR] Timed out waiting for element(s).");
-        }
-        catch (NoSuchElementException)
-        {
-            Console.WriteLine("[ERR] Failed to find required element(s).");
+            Console.WriteLine("[14] AddFilters completed");
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[ERR] Unexpected error: {e.Message}");
+            Console.WriteLine($"[ERR] {e.GetType().Name}: {e.Message}");
         }
     }
 }

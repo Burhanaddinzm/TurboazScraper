@@ -4,7 +4,11 @@ namespace TurboScraper;
 
 public static class Helpers
 {
-    public static CarModel GetCarObj(this IWebElement element)
+    public static CarModel GetCarObj(
+        this IWebElement element,
+        string link,
+        int views,
+        string transmission)
     {
         var bottomPart = element.FindElement(By.CssSelector(".products-i__bottom"));
 
@@ -24,9 +28,6 @@ public static class Helpers
 
         DateTime date = ParseTurboDate(datePart);
 
-        var link = element.FindElement(By.CssSelector("a.products-i__link"))
-                          .GetAttribute("href");
-
         int id = ExtractIdFromUrl(link);
 
         return new CarModel
@@ -37,7 +38,9 @@ public static class Helpers
             Details = details,
             City = city,
             Url = link,
-            Date = date
+            Date = date,
+            Views = views,
+            Transmission = transmission
         };
     }
 
