@@ -1,8 +1,8 @@
-namespace TurboScraper;
-
 using System.Runtime.InteropServices;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
+
+namespace TurboScraper;
 
 public class Scraper : IDisposable
 {

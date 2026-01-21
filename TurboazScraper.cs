@@ -64,7 +64,15 @@ public class TurboazScraper : Scraper
                     return cars;
                 }
 
-                cars.Add(item.GetCarObj(link, views, transmission));
+                CarModel car = item.GetCarObj(link, views, transmission);
+
+                if (_config.WhitelistCities.Any()
+                    && !_config.WhitelistCities.Any(c => car.City.Contains(c, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                cars.Add(car);
             }
 
             var nextBtn = _driver

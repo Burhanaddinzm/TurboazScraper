@@ -15,4 +15,11 @@
     <PackageReference Include="Selenium.WebDriver" Version="4.39.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include=".env">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
