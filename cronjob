@@ -1,0 +1,1 @@
+0 0 * * * root cd /app && dotnet turbo-scraper.dll >> /var/log/cron.log 2>&1

@@ -9,7 +9,6 @@ public class CarModel
     public int Views { get; set; }
     public string City { get; set; } = null!;
     public string Transmission { get; set; } = null!;
-
     public string Url { get; set; } = null!;
     public DateTime Date { get; set; }
 

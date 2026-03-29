@@ -1,25 +1,37 @@
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using SeleniumExtras.WaitHelpers;
+using System.Text.RegularExpressions;
 
 namespace TurboScraper;
 
 public class TurboazScraper : Scraper
 {
     private readonly TurboazScraperConfig _config;
+    private readonly bool _useFilters;
 
-    public TurboazScraper(string url, bool isHeadless) : base(url, isHeadless)
+    public TurboazScraper(string url, bool isHeadless, bool useFilters = true)
+        : base(url, isHeadless)
     {
         _config = TurboazScraperConfig.FromEnvironment();
+        _useFilters = useFilters;
     }
 
-    public List<CarModel> GetCars()
+    public IEnumerable<CarModel> GetCars()
     {
-        AddFilters();
-        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(30));
+        if (_useFilters)
+        {
+            Console.WriteLine("[INIT] Applying filters...");
+            AddFilters();
+        }
+        else
+        {
+            Console.WriteLine("[INIT] Skipping filters (FILTERED_URL mode)");
+        }
 
-        List<CarModel> cars = new List<CarModel>();
+        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(30));
         int page = 1;
+        int yieldedCount = 0;
 
         while (true)
         {
@@ -43,36 +55,38 @@ public class TurboazScraper : Scraper
                     continue;
                 }
 
-                var dateEl = item
-                    .FindElements(By.CssSelector(".products-i__datetime"))
-                    .FirstOrDefault();
-                if (dateEl == null) continue;
+                var dateEl = item.FindElements(By.CssSelector(".products-i__datetime")).FirstOrDefault();
+                if (dateEl == null)
+                    continue;
 
                 var dateText = dateEl.Text;
-
-                var link = item.FindElement(By.CssSelector("a.products-i__link"))
-                  .GetAttribute("href");
-                if (link == null) continue;
-
-                var (views, transmission) = GetViewCountAndTransmission(link);
-                if (views >= _config.MaxViews) continue;
 
                 if (!dateText.Contains("bugün") && !dateText.Contains("dünən"))
                 {
                     Console.WriteLine($"[STOP] Listing out of range: {dateText}");
-                    Console.WriteLine($"[DONE] Collected {cars.Count} cars");
-                    return cars;
+                    Console.WriteLine($"[DONE] Yielded {yieldedCount} cars");
+                    yield break;
                 }
 
-                CarModel car = item.GetCarObj(link, views, transmission);
+                var link = item.FindElement(By.CssSelector("a.products-i__link")).GetAttribute("href");
+                if (string.IsNullOrWhiteSpace(link))
+                    continue;
 
-                if (_config.WhitelistCities.Any()
-                    && !_config.WhitelistCities.Any(c => car.City.Contains(c, StringComparison.OrdinalIgnoreCase)))
+                var (views, transmission) = GetViewCountAndTransmission(link);
+                if (views >= _config.MaxViews)
+                    continue;
+
+                var car = item.GetCarObj(link, views, transmission);
+
+                if (_config.WhitelistCities.Any() &&
+                    !_config.WhitelistCities.Any(c =>
+                        car.City.Contains(c, StringComparison.OrdinalIgnoreCase)))
                 {
                     continue;
                 }
 
-                cars.Add(car);
+                yieldedCount++;
+                yield return car;
             }
 
             var nextBtn = _driver
@@ -85,15 +99,29 @@ public class TurboazScraper : Scraper
                 break;
             }
 
-            var nextPageUrl = $"{_driver.Url}&page={page + 1}";
+            var nextPageUrl = BuildNextPageUrl(_driver.Url, page + 1);
             _driver.Navigate().GoToUrl(nextPageUrl);
 
             wait.Until(d => d.Url.Contains($"page={page + 1}"));
             page++;
         }
 
-        Console.WriteLine($"[DONE] Collected {cars.Count} cars");
-        return cars;
+        Console.WriteLine($"[DONE] Yielded {yieldedCount} cars");
+    }
+
+    private static string BuildNextPageUrl(string currentUrl, int nextPage)
+    {
+        if (currentUrl.Contains("page="))
+        {
+            return Regex.Replace(
+                currentUrl,
+                @"([?&])page=\d+",
+                $"$1page={nextPage}");
+        }
+
+        return currentUrl.Contains("?")
+            ? $"{currentUrl}&page={nextPage}"
+            : $"{currentUrl}?page={nextPage}";
     }
 
     private (int Views, string Transmission) GetViewCountAndTransmission(string listingUrl)
@@ -141,7 +169,7 @@ public class TurboazScraper : Scraper
 
     private void AddFilters()
     {
-        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(10));
+        var wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(15));
 
         try
         {
@@ -154,65 +182,50 @@ public class TurboazScraper : Scraper
             Console.WriteLine("[03] Clicking 'More Filters'");
             moreFiltersBtn.Click();
 
-            Console.WriteLine("[04] Waiting for Max Price input");
-            var maxPriceInput = wait.Until(ExpectedConditions.ElementIsVisible(By.Id("q_price_to")));
-            wait.Until(_ => maxPriceInput.Enabled);
+            wait.SetInputIfPresent(By.Id("q_price_from"), _config.MinPrice, "Min Price");
+            wait.SetInputIfPresent(By.Id("q_price_to"), _config.MaxPrice, "Max Price");
 
-            Console.WriteLine($"[05] Setting Max Price -> {_config.MaxPrice}");
-            maxPriceInput.Clear();
-            maxPriceInput.SendKeys(_config.MaxPrice.ToString());
+            Console.WriteLine("[04] Setting Market values");
+            wait.SetMultiSelectValuesByText("q_market", _config.Markets);
 
-            Console.WriteLine("[06] Locating Market dropdown");
-            var dropdown = wait.Until(d =>
-                d.FindElement(By.CssSelector("div.tz-dropdown[data-id='q_market']")));
+            wait.SetInputIfPresent(By.Id("q_mileage_from"), _config.MinMileage, "Min Mileage");
+            wait.SetInputIfPresent(By.Id("q_mileage_to"), _config.MaxMileage, "Max Mileage");
 
-            if (!dropdown.GetAttribute("class").Contains("is-open"))
+            if (_config.YearMin.HasValue)
             {
-                Console.WriteLine("[07] Opening Market dropdown");
-                dropdown.FindElement(By.CssSelector(".tz-dropdown__selected")).Click();
-                wait.Until(d => dropdown.GetAttribute("class").Contains("is-open"));
+                Console.WriteLine($"[07] Setting Year Min -> {_config.YearMin.Value}");
+                wait.SelectSingleDropdownValue("q_year_from", _config.YearMin.Value.ToString());
             }
 
-            Console.WriteLine($"[08] Selecting Market -> {_config.Market}");
-            var option = wait.Until(d =>
-                d.FindElements(By.CssSelector("div.tz-dropdown__option"))
-                 .FirstOrDefault(el => el.Text.Trim().Contains(_config.Market)));
-
-            if (option == null)
-                throw new NoSuchElementException($"Option '{_config.Market}' not found");
-
-            option.FindElements(By.CssSelector("label.tz-dropdown__option-label"))
-                  .FirstOrDefault()?.Click();
-
-            Console.WriteLine("[09] Waiting for Market selection to apply");
-            wait.Until(d =>
-                dropdown.FindElement(By.CssSelector(".tz-dropdown__values"))
-                        .Text.Trim() == _config.Market);
-
-            if (dropdown.GetAttribute("class").Contains("is-open"))
+            if (_config.YearMax.HasValue)
             {
-                Console.WriteLine("[10] Closing Market dropdown");
-                dropdown.FindElement(By.CssSelector(".tz-dropdown__selected")).Click();
-                wait.Until(d => !dropdown.GetAttribute("class").Contains("is-open"));
+                Console.WriteLine($"[08] Setting Year Max -> {_config.YearMax.Value}");
+                wait.SelectSingleDropdownValue("q_year_to", _config.YearMax.Value.ToString());
             }
 
-            Console.WriteLine("[11] Waiting for Mileage input");
-            var mileage = wait.Until(d => d.FindElement(By.Id("q_mileage_to")));
+            if (_config.Credit)
+            {
+                Console.WriteLine("[09] Enabling Credit");
+                wait.SetCheckbox(By.Id("q_loan"), true);
+            }
 
-            Console.WriteLine($"[12] Setting Mileage -> {_config.MaxMileage}");
-            mileage.Clear();
-            mileage.SendKeys(_config.MaxMileage.ToString());
+            if (_config.Barter)
+            {
+                Console.WriteLine("[10] Enabling Barter");
+                wait.SetCheckbox(By.Id("q_barter"), true);
+            }
 
-            Console.WriteLine("[13] Clicking 'Elanları göstər'");
+            Console.WriteLine("[11] Clicking 'Elanları göstər'");
             var showResultsBtn = wait.Until(ExpectedConditions.ElementToBeClickable(
                 By.CssSelector("button.main-search__btn.tz-btn.tz-btn--primary[name='commit']")));
             showResultsBtn.Click();
 
-            Console.WriteLine("[14] AddFilters completed");
+            Console.WriteLine("[12] AddFilters completed");
         }
         catch (Exception e)
         {
             Console.WriteLine($"[ERR] {e.GetType().Name}: {e.Message}");
+            throw;
         }
     }
 }

@@ -20,14 +20,24 @@ public class Scraper : IDisposable
         options.AddArgument("--disable-extensions");
         options.AddArgument("--disable-images");
         options.AddArgument("--blink-settings=imagesEnabled=false");
+
         options.AddUserProfilePreference("profile.managed_default_content_settings.images", 2);
-        options.AddUserProfilePreference("profile.default_content_setting_values.fonts", 2);
+        options.AddUserProfilePreference("profile.default_content_setting_values.images", 2);
+
+        ChromeDriverService service;
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
+            options.BinaryLocation = "/usr/bin/chromium";
             options.AddArgument("--no-sandbox");
             options.AddArgument("--disable-dev-shm-usage");
             options.AddArgument("--window-size=1920,1080");
+
+            service = ChromeDriverService.CreateDefaultService("/usr/bin");
+        }
+        else
+        {
+            service = ChromeDriverService.CreateDefaultService();
         }
 
         if (isHeadless)
@@ -35,7 +45,9 @@ public class Scraper : IDisposable
             options.AddArgument("--headless");
         }
 
-        var service = ChromeDriverService.CreateDefaultService();
+        service.SuppressInitialDiagnosticInformation = true;
+        service.HideCommandPromptWindow = true;
+
         _driver = new ChromeDriver(service, options, TimeSpan.FromMinutes(3));
         _driver.Navigate().GoToUrl(url);
     }
@@ -49,6 +61,7 @@ public class Scraper : IDisposable
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed) return;
+
         if (disposing)
         {
             try
@@ -56,11 +69,12 @@ public class Scraper : IDisposable
                 _driver.Quit();
                 _driver.Dispose();
             }
-            catch (Exception ex)
+            catch
             {
                 Console.WriteLine("Failed to dispose ChromeDriver of Selenium");
             }
         }
+
         _disposed = true;
     }
 

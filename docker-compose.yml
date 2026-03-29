@@ -1,0 +1,10 @@
+services:
+  turbo-scraper:
+    build: .
+    container_name: turbo-scraper
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/var/log
