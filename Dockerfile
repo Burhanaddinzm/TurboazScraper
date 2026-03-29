@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     cron \
     chromium \
     chromium-driver \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
